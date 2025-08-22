@@ -25,7 +25,7 @@ def read_authors(fn):
     with open(fn) as f:
         for line in f:
             author, affiliations = line.strip().split('\t')
-            affiliations = affiliations.split(',')
+            affiliations = [s.strip() for s in affiliations.split(',')]
             authors[author] = affiliations
     return authors
 
@@ -43,43 +43,94 @@ def read_affiliations(fn):
         dict {shorthand for affiliation: full name of affiliation}
     """
     affiliations = {}
+    attributes = OrderedDict()
     with open(fn) as f:
         for line in f:
             shorthand, fullname = line.rstrip().split('\t')
-            affiliations[shorthand] = fullname
-    return affiliations
+            if len(shorthand)>1:
+                affiliations[shorthand] = fullname
+            else:
+                attributes[shorthand] = fullname
+    return affiliations,attributes
 
 
 def main(args):
     # Read input
     authors = read_authors(args.authors)
-    affiliations = read_affiliations(args.affiliations)
+    affiliations,attributes = read_affiliations(args.affiliations)
 
+    print(f"affiliations {affiliations}\n")
+    print(f"attributes {attributes}\n")
+
+    # unique affiliations, to later remove those not used for any authors
+    affiliations_in_use = set()
     # Verify that each author's affiliation has a name
     for author in authors:
         for affiliation in authors[author]:
-            if affiliation not in affiliations:
+            if affiliation not in list(affiliations.keys())+list(attributes.keys()):
                 raise Exception(("Author %s has affiliation %s but the "
                     "name of that affiliation was not given") % (author,
                     affiliation))
+            else:
+                affiliations_in_use |= set([affiliation])
+
+    print(f"affiliations_in_use {affiliations_in_use}\n")
+
+    affiliations_to_remove = set(list(affiliations.keys())) - affiliations_in_use
+    for affiliation_to_remove in affiliations_to_remove:
+        del affiliations[affiliation_to_remove]
+
+    
+
+    [authors[author]]
 
     # Order affiliations according to the author order
     affiliations_number = {}
+    attributes_number = {}
     curr_num = 1
-    for author in authors:
+    attribute_num = 1
+    for author_num,author in enumerate(authors):
         for affiliation in authors[author]:
             if affiliation not in affiliations_number:
-                affiliations_number[affiliation] = curr_num
-                curr_num += 1
+                if len(affiliation)>1:
+                    affiliations_number[affiliation] = curr_num
+                    curr_num += 1
+                else :
+                    #affiliations_number[affiliation] = author_num
+                    #attributes_number[affiliation] = author_num
+                    attributes_number[affiliation] = attribute_num
+                    attribute_num += 1
+    #affiliations_ordered = sorted(list(affiliations.keys()),
+    #    key=lambda x: affiliations_number[x])
+
     affiliations_ordered = sorted(list(affiliations.keys()),
         key=lambda x: affiliations_number[x])
+
+    attributes_ordered = sorted(list(attributes.keys()),
+        key=lambda x: attributes_number[x])
+
+    attributes_ordered = list(attributes.keys())
+
+    print(f"affiliations_ordered {affiliations_ordered}")
+    print(f"attributes_ordered {attributes_ordered}")
+
+    #affiliations_ordered = sorted(list(affiliations.keys()),
+    #    key=lambda x: affiliations_number[x] if len(x)>1 else 1000+ord(x))
 
     # Generate HTML and LaTeX of authors with their affiliations numbered
     author_html = ''
     author_latex = ''
     for i, author in enumerate(authors):
-        numbers = [affiliations_number[x] for x in authors[author]]
-        numbers_str = ','.join([str(x) for x in sorted(numbers)])
+        #numbers = [affiliations_number[x] for x in authors[author]]
+        numbers = [affiliations_number[x] for x in [y for y in authors[author] if y not in attributes_number.keys()]]
+        #numbers = [affiliations_number[x] for x in authors[author] if authors[author] in affiliations_number.keys() and type(affiliations_number[x])!=str]
+        non_numbers = [x for x in [y for y in authors[author] if y in attributes_number.keys()]]
+        #numbers_str = ','.join([str(x) for x in sorted(numbers)]+non_numbers)
+        numbers_str = ','.join(
+                                [str(x) for x in sorted(numbers)] + 
+                                    [str(y) for y in sorted(non_numbers, key=lambda w: attributes_number[w])] )
+        #print(f"numbers_str {numbers_str}")
+        #print(f"non_numbers {non_numbers}")
         if i > 0:
             author_html += ', '
             author_latex += ',\n'
@@ -97,7 +148,9 @@ def main(args):
 
     # Generate HTML and LaTeX of affiliations with their full names
     affiliations_html = ''
+    attributes_html = ''
     affiliations_latex = ''
+    attributes_latex = ''
     for i, affiliation in enumerate(affiliations_ordered):
         number = str(affiliations_number[affiliation])
         fullname = affiliations[affiliation]
@@ -107,11 +160,23 @@ def main(args):
         affiliations_html += '<sup>' + number + '</sup>' + fullname + '.'
         affiliations_latex += '$^{' + number + '}$' + fullname + '.\n'
 
+    for i, attribute in enumerate(attributes_ordered):
+        symbol = attribute#str(attributes_number[attribute])
+        fullname = attributes[attribute]
+        if i > 0:
+            attributes_html += ' '
+
+        attributes_html += '<sup>' + symbol + '</sup>' + fullname + '.'
+        attributes_latex += '$^{' + symbol + '}$' + fullname + '.\n'
+
+        
+
     # Write HTML
     with open(args.out_html, 'w') as f:
         f.write(author_html)
         f.write('<br><br>')
         f.write(affiliations_html)
+        f.write(attributes_html)
 
     # Write LaTeX if desired
     if args.out_latex:
@@ -126,6 +191,7 @@ def main(args):
             f.write('%% LIST OF AFFILIATIONS %%\n')
             f.write('%%%%%%%%%%%%%%%%%%%%%%%%%%\n')
             f.write(affiliations_latex)
+            f.write(attributes_latex)
             f.write('%%%%%%%%%%%%%%%%%%%%%%%%%%\n')
 
 
